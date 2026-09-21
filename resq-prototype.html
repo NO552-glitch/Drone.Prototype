@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ResQ — Autonomous SAR Drone Software Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#080c10; --bg-2:#0d1319; --panel:#111a21; --panel-2:#0c151b;
+    --line:#1e2c35; --line-soft:#16212a;
+    --text:#e8eef2; --muted:#7d919e; --muted-2:#54656f;
+    --amber:#ff9c3d; --teal:#38e0c8; --red:#ff5a5f; --green:#3fe092; --purple:#c893ff;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  :root:not([data-theme="light"]){ color-scheme: dark; }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#eef1f3; --bg-2:#e5eaed; --panel:#ffffff; --panel-2:#f4f6f7;
+      --line:#d6dde1; --line-soft:#e3e8ea;
+      --text:#101820; --muted:#5b6d78; --muted-2:#8a99a3;
+      --amber:#c96a12; --teal:#0f9c88; --red:#d43a3f; --green:#1f9e64; --purple:#8a4fd6;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#080c10; --bg-2:#0d1319; --panel:#111a21; --panel-2:#0c151b;
+    --line:#1e2c35; --line-soft:#16212a; --text:#e8eef2; --muted:#7d919e;
+  }
+  html,body{height:100%;}
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    background:radial-gradient(ellipse at 20% 0%, var(--bg-2), var(--bg) 60%);
+    color:var(--text);
+    font-family:'Space Grotesk', system-ui, -apple-system, sans-serif;
+    height:100%;
+    display:flex; flex-direction:column;
+    overflow:hidden;
+  }
+  .mono{ font-family:'IBM Plex Mono', ui-monospace, monospace; }
+  noscript{ display:block; padding:24px; font-family:'IBM Plex Mono'; color:var(--muted); }
+
+  /* ---------- HEADER ---------- */
+  header{
+    flex:0 0 auto;
+    padding:env(safe-area-inset-top,0px) 0 0 0;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg, var(--panel), var(--panel-2));
+  }
+  .headbar{ display:flex; align-items:center; gap:14px; padding:10px 16px; flex-wrap:wrap; }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand-mark{
+    width:34px;height:34px;border-radius:9px;
+    background:conic-gradient(from 220deg, var(--amber), var(--teal), var(--amber));
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700; font-size:13px; color:#0a0f13; flex:0 0 auto;
+  }
+  .brand-text h1{ font-size:15px; font-weight:600; letter-spacing:.2px; line-height:1.1; }
+  .brand-text p{ font-size:11px; color:var(--muted); font-family:'IBM Plex Mono'; margin-top:2px;}
+  .status-pills{ display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
+  .pill{
+    font-family:'IBM Plex Mono'; font-size:10.5px; padding:5px 9px; border-radius:6px;
+    border:1px solid var(--line); background:var(--panel-2); color:var(--muted);
+    display:flex; align-items:center; gap:6px; white-space:nowrap;
+  }
+  .dot{ width:6px;height:6px;border-radius:50%; background:var(--muted-2); flex:0 0 auto; }
+  .dot.on{ background:var(--green); box-shadow:0 0 6px var(--green); }
+  .dot.warn{ background:var(--amber); box-shadow:0 0 6px var(--amber); }
+
+  .tabs{ display:flex; gap:2px; padding:0 12px; overflow-x:auto; }
+  .tab-btn{
+    appearance:none; border:none; background:transparent; color:var(--muted);
+    font-family:'IBM Plex Mono'; font-size:11.5px; letter-spacing:.3px;
+    padding:10px 14px; cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap;
+  }
+  .tab-btn.active{ color:var(--text); border-bottom-color:var(--amber); }
+  .tab-btn span{ color:var(--muted-2); margin-right:6px; }
+
+  main{ flex:1 1 auto; min-height:0; position:relative; }
+  .view{ position:absolute; inset:0; display:none; }
+  .view.active{ display:block; }
+
+  /* ===== FLIGHT VIEW (canvas 2D isometric — no external deps) ===== */
+  #flight-view{ background:#020507; }
+  #scene-canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  .hud{ position:absolute; inset:0; pointer-events:none; font-family:'IBM Plex Mono'; }
+  .hud-block{
+    position:absolute; padding:9px 12px; background:rgba(8,12,16,.6);
+    border:1px solid rgba(56,224,200,.25); border-radius:8px; font-size:11px; color:#cfe8e3;
+  }
+  .hud-tl{ top:12px; left:12px; min-width:150px; }
+  .hud-tl .row{ display:flex; justify-content:space-between; gap:14px; padding:2px 0; }
+  .hud-tl .k{ color:var(--muted); font-size:10px; }
+  .hud-tl .v{ color:var(--text); font-weight:600; }
+  .hud-mode{ top:12px; right:12px; text-align:right; }
+  .hud-mode .badge{
+    display:inline-block; padding:3px 8px; border-radius:5px; font-size:10px;
+    background:rgba(255,156,61,.15); color:var(--amber); border:1px solid rgba(255,156,61,.4);
+  }
+  .hud-mode .badge.slam{ background:rgba(255,90,95,.15); color:var(--red); border-color:rgba(255,90,95,.4); }
+  .hud-ticker{ bottom:64px; left:12px; right:12px; font-size:11px; border-color:rgba(255,156,61,.3); }
+  .hud-ticker b{ color:var(--amber); }
+  .hud-grid{ bottom:12px; left:12px; right:12px; padding:8px 10px; display:flex; align-items:center; gap:8px; }
+  .hud-grid .cells{ display:grid; grid-template-columns:repeat(18,1fr); gap:2px; flex:1; }
+  .hud-grid .cell{ height:7px; border-radius:1px; background:rgba(125,145,158,.25); }
+  .hud-grid .cell.done{ background:var(--teal); }
+  .hud-grid .cell.hit{ background:var(--red); }
+  .hud-grid .pct{ font-size:11px; color:var(--teal); font-weight:600; min-width:38px; text-align:right; }
+  .hud-legend{ top:auto; bottom:88px; right:12px; font-size:9.5px; color:var(--muted); line-height:1.7; text-align:left; }
+  .hud-legend i{ display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; }
+
+  /* ===== DASHBOARD ===== */
+  #dash-view{ overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 14px calc(20px + env(safe-area-inset-bottom,0px)); }
+  .dash-grid{ display:grid; gap:12px; grid-template-columns: 240px 1fr 260px; }
+  @media (max-width: 880px){ .dash-grid{ grid-template-columns: 1fr; } }
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:13px; min-width:0; }
+  .card h3{
+    font-size:10.5px; letter-spacing:.4px; color:var(--muted); font-weight:500;
+    font-family:'IBM Plex Mono'; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;
+  }
+  .gauge{ margin-bottom:14px; }
+  .gauge:last-child{ margin-bottom:0; }
+  .gauge-top{ display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-bottom:5px; }
+  .gauge-top b{ color:var(--text); font-family:'IBM Plex Mono'; font-size:13px; }
+  .bar{ height:6px; border-radius:4px; background:var(--line-soft); overflow:hidden; }
+  .bar i{ display:block; height:100%; border-radius:4px; background:var(--teal); transition:width .4s ease; }
+  .bar.batt i{ background:linear-gradient(90deg, var(--green), var(--teal)); }
+  .bar.cov i{ background:linear-gradient(90deg, var(--amber), var(--teal)); }
+
+  table{ width:100%; border-collapse:collapse; font-size:11.5px; }
+  thead th{
+    text-align:left; font-family:'IBM Plex Mono'; font-size:9.5px; color:var(--muted-2);
+    letter-spacing:.3px; padding:0 8px 8px; border-bottom:1px solid var(--line); font-weight:500;
+  }
+  tbody td{ padding:8px 8px; border-bottom:1px solid var(--line-soft); vertical-align:middle; }
+  tbody tr:last-child td{ border-bottom:none; }
+  .rank{ font-family:'IBM Plex Mono'; color:var(--muted); }
+  .rank.top{ color:var(--amber); font-weight:600; }
+  .conf{ font-family:'IBM Plex Mono'; }
+  .tag{ display:inline-block; font-size:9.5px; padding:2px 7px; border-radius:4px; font-family:'IBM Plex Mono'; }
+  .tag.survivor{ background:rgba(63,224,146,.12); color:var(--green); border:1px solid rgba(63,224,146,.35); }
+  .tag.hazard{ background:rgba(255,90,95,.12); color:var(--red); border:1px solid rgba(255,90,95,.35); }
+  .empty-row{ color:var(--muted-2); padding:14px 8px; font-family:'IBM Plex Mono'; font-size:11px; }
+
+  .log-list{ display:flex; flex-direction:column; gap:7px; max-height:420px; overflow-y:auto; }
+  .log-item{ font-family:'IBM Plex Mono'; font-size:10.5px; color:var(--muted); display:flex; gap:8px; }
+  .log-item .t{ color:var(--muted-2); flex:0 0 auto; }
+  .log-item b{ color:var(--text); font-weight:500; }
+
+  #heatmap{ width:100%; height:140px; border-radius:6px; display:block; background:var(--panel-2); }
+
+  /* ===== CONSOLE ===== */
+  #console-view.active{ display:flex; }
+  .console-split{ display:flex; width:100%; height:100%; }
+  .term{
+    flex:1 1 55%; background:#04070a; padding:12px 14px calc(14px + env(safe-area-inset-bottom,0px));
+    font-family:'IBM Plex Mono'; font-size:11.5px; overflow-y:auto; line-height:1.65;
+  }
+  @media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) .term{ background:#0b1116; } }
+  .term-line{ white-space:pre-wrap; word-break:break-word; }
+  .lvl{ display:inline-block; width:64px; }
+  .lvl.INFO{ color:var(--teal); } .lvl.NAV{ color:#8fb4ff; } .lvl.PERC{ color:var(--amber); }
+  .lvl.SLAM{ color:var(--purple); } .lvl.WARN{ color:var(--red); } .lvl.COMM{ color:var(--muted); }
+  .term-ts{ color:var(--muted-2); }
+  .code-pane{
+    flex:1 1 45%; border-left:1px solid var(--line); background:var(--panel-2);
+    padding:12px 14px calc(14px + env(safe-area-inset-bottom,0px)); overflow-y:auto;
+    font-family:'IBM Plex Mono'; font-size:11px; line-height:1.65; display:none;
+  }
+  @media (min-width: 760px){ .code-pane{ display:block; } }
+  .code-pane h4{ font-family:'Space Grotesk'; font-size:11.5px; color:var(--muted); margin-bottom:8px; font-weight:600;}
+  .code-pane .sub{ color:var(--muted-2); font-size:10px; margin-bottom:12px; }
+  .kw{ color:#ff9c3d; } .fn{ color:#38e0c8; } .str{ color:#a4e08f; } .cm{ color:#54656f; } .num{ color:#c893ff; }
+  pre{ white-space:pre-wrap; }
+
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="headbar">
+    <div class="brand">
+      <div class="brand-mark">Rq</div>
+      <div class="brand-text">
+        <h1>ResQ — Autonomous SAR Drone</h1>
+        <p>APPIEX · SIH 2026 · PS-26177 · Software Prototype Simulator</p>
+      </div>
+    </div>
+    <div class="status-pills">
+      <div class="pill"><span class="dot on" id="pill-mission-dot"></span><span id="pill-mission">MISSION ACTIVE</span></div>
+      <div class="pill"><span class="dot warn" id="pill-link-dot"></span><span id="pill-link">LINK: OFFLINE-STORE</span></div>
+      <div class="pill">BATT <b class="mono" id="pill-batt" style="color:var(--text)">100%</b></div>
+    </div>
+  </div>
+  <div class="tabs">
+    <button class="tab-btn active" data-view="flight-view"><span>01</span>LIVE FLIGHT SIM</button>
+    <button class="tab-btn" data-view="dash-view"><span>02</span>MISSION DASHBOARD</button>
+    <button class="tab-btn" data-view="console-view"><span>03</span>ONBOARD SYSTEM CONSOLE</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===================== VIEW 1 — LIVE FLIGHT (isometric canvas) ===================== -->
+  <section id="flight-view" class="view active">
+    <canvas id="scene-canvas"></canvas>
+    <div class="hud">
+      <div class="hud-block hud-tl">
+        <div class="row"><span class="k">ALTITUDE</span><span class="v" id="hud-alt">38.0 m</span></div>
+        <div class="row"><span class="k">AIRSPEED</span><span class="v" id="hud-spd">4.2 m/s</span></div>
+        <div class="row"><span class="k">HEADING</span><span class="v" id="hud-hdg">0°</span></div>
+        <div class="row"><span class="k">WAYPOINT</span><span class="v" id="hud-wp">1/45</span></div>
+      </div>
+      <div class="hud-block hud-mode">
+        <div class="badge" id="hud-mode-badge">GPS NAV</div>
+        <div style="margin-top:6px;font-size:10px;color:var(--muted)">Pixhawk 6C · VIO+LiDAR SLAM</div>
+      </div>
+      <div class="hud-block hud-legend">
+        <div><i style="background:var(--green)"></i>Survivor</div>
+        <div><i style="background:var(--red)"></i>Hazard</div>
+        <div><i style="background:var(--purple)"></i>SLAM point</div>
+      </div>
+      <div class="hud-block hud-ticker" id="hud-ticker">Initializing autonomous grid search…</div>
+      <div class="hud-block hud-grid">
+        <div class="cells" id="hud-cells"></div>
+        <div class="pct" id="hud-pct">0%</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== VIEW 2 — DASHBOARD ===================== -->
+  <section id="dash-view" class="view">
+    <div class="dash-grid">
+      <div class="card">
+        <h3>TELEMETRY</h3>
+        <div class="gauge">
+          <div class="gauge-top"><span>Altitude</span><b id="d-alt">0 m</b></div>
+          <div class="bar"><i id="bar-alt" style="width:0%"></i></div>
+        </div>
+        <div class="gauge">
+          <div class="gauge-top"><span>Battery</span><b id="d-batt">100%</b></div>
+          <div class="bar batt"><i id="bar-batt" style="width:100%"></i></div>
+        </div>
+        <div class="gauge">
+          <div class="gauge-top"><span>Airspeed</span><b id="d-spd">0 m/s</b></div>
+          <div class="bar"><i id="bar-spd" style="width:0%"></i></div>
+        </div>
+        <div class="gauge">
+          <div class="gauge-top"><span>Area coverage</span><b id="d-cov">0%</b></div>
+          <div class="bar cov"><i id="bar-cov" style="width:0%"></i></div>
+        </div>
+        <h3 style="margin-top:16px">NAV MODE</h3>
+        <div class="gauge" style="margin-bottom:0">
+          <div class="gauge-top"><span id="d-mode-label">GPS / GLONASS lock</span><b id="d-mode-val" class="mono">NOMINAL</b></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>RESCUE-PRIORITY DETECTIONS <span id="det-count" class="mono" style="color:var(--muted-2);font-weight:400">0 total</span></h3>
+        <table>
+          <thead><tr><th>#</th><th>Type</th><th>Confidence</th><th>Risk</th><th>Priority</th><th>Coords (SLAM/geo)</th></tr></thead>
+          <tbody id="det-table"><tr><td colspan="6" class="empty-row">No detections yet — grid search in progress…</td></tr></tbody>
+        </table>
+        <h3 style="margin-top:16px">SEARCH-AREA HEATMAP</h3>
+        <canvas id="heatmap"></canvas>
+      </div>
+
+      <div class="card">
+        <h3>MISSION TIMELINE</h3>
+        <div class="log-list" id="mission-log"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== VIEW 3 — CONSOLE ===================== -->
+  <section id="console-view" class="view">
+    <div class="console-split">
+      <div class="term" id="term"></div>
+      <div class="code-pane">
+        <h4>Onboard logic — illustrative</h4>
+        <div class="sub">Simplified representation of the perception → SLAM → rescue-intelligence loop running on the Jetson Orin Nano. For demonstration, not production firmware.</div>
+        <pre><span class="cm"># resq_core/mission_loop.py</span>
+<span class="kw">while</span> mission.active:
+    frame_rgb, frame_ir = sensors.capture()
+    dets = <span class="fn">yolo_fusion</span>(frame_rgb, frame_ir)
+
+    <span class="kw">if</span> gps.signal_lost() <span class="kw">or</span> env.is_collapsed_structure:
+        pose = <span class="fn">vio_lidar_slam</span>.update(imu, lidar)
+        nav.mode = <span class="str">"SLAM_GPS_DENIED"</span>
+    <span class="kw">else</span>:
+        pose = gps.get_pose()
+        nav.mode = <span class="str">"GPS_NAV"</span>
+
+    <span class="kw">for</span> d <span class="kw">in</span> dets:
+        risk = <span class="fn">hazard_risk</span>(d, env.map)
+        priority = <span class="num">0.6</span> * d.confidence + <span class="num">0.4</span> * risk
+        rescue_queue.<span class="fn">push</span>(d, priority, pose)
+
+    heatmap.<span class="fn">mark_cell</span>(pose.cell, covered=<span class="kw">True</span>)
+    nav.<span class="fn">step_waypoint</span>(coverage_plan)
+
+    <span class="kw">if</span> comms.link_available():
+        sync.<span class="fn">flush</span>(rescue_queue, heatmap)
+    <span class="kw">else</span>:
+        store.<span class="fn">buffer_local</span>(rescue_queue, heatmap)
+</pre>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   SHARED MISSION STATE  (no external libraries — pure JS/DOM)
+   ============================================================ */
+var GRID_COLS = 9, GRID_ROWS = 5;
+var CELL = 10;
+var originX = -(GRID_COLS-1)*CELL/2, originZ = -(GRID_ROWS-1)*CELL/2;
+
+var waypoints = [];
+(function buildWaypoints(){
+  for(var r=0;r<GRID_ROWS;r++){
+    var cols = [];
+    for(var c=0;c<GRID_COLS;c++) cols.push(c);
+    if(r%2===1) cols.reverse();
+    for(var i=0;i<cols.length;i++){
+      waypoints.push({x: originX + cols[i]*CELL, z: originZ + r*CELL, cellIndex: r*GRID_COLS+cols[i]});
+    }
+  }
+})();
+
+var COLLAPSE_ZONE = {xMin:-52, xMax:-4, zMin:-18, zMax:36};
+
+var state = {
+  alt: 38, spd: 4.2, hdg: 0, hdgRad: 0, battery: 100,
+  wpIndex: 0, pos: {x: waypoints[0].x, z: waypoints[0].z},
+  mode: "GPS_NAV",
+  coveredCells: new Array(GRID_COLS*GRID_ROWS).fill(false),
+  hitCells: {},
+  detections: [],
+  slamTrail: [],
+  log: [],
+  tick: 0
+};
+
+var DET_TYPES = [
+  {label:"Survivor — mobile", tag:"survivor"},
+  {label:"Survivor — trapped", tag:"survivor"},
+  {label:"Hazard — active fire", tag:"hazard"},
+  {label:"Hazard — gas leak risk", tag:"hazard"},
+  {label:"Hazard — structural collapse", tag:"hazard"}
+];
+
+function rand(a,b){ return a + Math.random()*(b-a); }
+function pad(n){ return n<10 ? "0"+n : ""+n; }
+function nowStamp(){ var d=new Date(); return pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds()); }
+
+function pushLog(level, msg){
+  state.log.unshift({level:level, msg:msg, t: nowStamp()});
+  if(state.log.length>200) state.log.pop();
+  safe(function(){ renderConsoleLine(level, msg); });
+  safe(function(){ renderMissionLogItem(level, msg); });
+}
+function safe(fn){ try{ fn(); }catch(e){ /* never let one view's render break another */ } }
+
+/* ============================================================
+   ISOMETRIC CANVAS RENDERER — flight view (no WebGL / no CDN)
+   ============================================================ */
+var cv = document.getElementById('scene-canvas');
+var ctx = cv.getContext('2d');
+var DPR = Math.min(window.devicePixelRatio || 1, 2);
+var camPan = {x:0, y:0};
+var TILE_W = 34, TILE_H = 17;
+
+var rubble = [];
+(function seedRubble(){
+  for(var i=0;i<55;i++){
+    rubble.push({
+      x: rand(originX-30, originX+GRID_COLS*CELL+10),
+      z: rand(originZ-20, originZ+GRID_ROWS*CELL+10),
+      w: rand(2.5,6), h: rand(2,7), dark: Math.random()<0.5
+    });
+  }
+})();
+
+function iso(x,z,h){
+  h = h||0;
+  return {
+    sx: (x - z) * (TILE_W/2),
+    sy: (x + z) * (TILE_H/2) - h
+  };
+}
+
+function resizeCanvas(){
+  var w = cv.clientWidth, h = cv.clientHeight;
+  if(w<=0 || h<=0) return;
+  cv.width = Math.round(w*DPR);
+  cv.height = Math.round(h*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', function(){ safe(resizeCanvas); });
+
+function drawDiamond(sx, sy, w, h, fill, stroke){
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - h/2);
+  ctx.lineTo(sx + w/2, sy);
+  ctx.lineTo(sx, sy + h/2);
+  ctx.lineTo(sx - w/2, sy);
+  ctx.closePath();
+  if(fill){ ctx.fillStyle = fill; ctx.fill(); }
+  if(stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+}
+
+function drawBox(x,z,w,d,h, topColor, sideColor1, sideColor2){
+  var p1 = iso(x-w/2, z-d/2), p2 = iso(x+w/2, z-d/2), p3 = iso(x+w/2, z+d/2), p4 = iso(x-w/2, z+d/2);
+  ctx.fillStyle = sideColor1;
+  ctx.beginPath();
+  ctx.moveTo(p4.sx, p4.sy); ctx.lineTo(p4.sx, p4.sy - h); ctx.lineTo(p3.sx, p3.sy - h); ctx.lineTo(p3.sx, p3.sy);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = sideColor2;
+  ctx.beginPath();
+  ctx.moveTo(p3.sx, p3.sy); ctx.lineTo(p3.sx, p3.sy - h); ctx.lineTo(p2.sx, p2.sy - h); ctx.lineTo(p2.sx, p2.sy);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = topColor;
+  ctx.beginPath();
+  ctx.moveTo(p1.sx, p1.sy - h); ctx.lineTo(p2.sx, p2.sy - h); ctx.lineTo(p3.sx, p3.sy - h); ctx.lineTo(p4.sx, p4.sy - h);
+  ctx.closePath(); ctx.fill();
+}
+
+var cellEls; // HUD strip cells (set on init)
+
+function renderScene(){
+  if(cv.clientWidth !== cv.width/DPR || cv.clientHeight !== cv.height/DPR) resizeCanvas();
+  var w = cv.clientWidth, h = cv.clientHeight;
+  if(!w || !h) return;
+
+  ctx.clearRect(0,0,w,h);
+  var g = ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#050a0d'); g.addColorStop(1,'#0a1013');
+  ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+
+  var droneScreen = iso(state.pos.x, state.pos.z);
+  var t = performance.now()*0.001;
+  camPan.x += ((w/2 - droneScreen.sx) - camPan.x) * 0.06;
+  camPan.y += ((h*0.42 - droneScreen.sy) - camPan.y) * 0.06;
+
+  ctx.save();
+  ctx.translate(camPan.x, camPan.y);
+
+  /* ground cells */
+  for(var r2=0;r2<GRID_ROWS;r2++){
+    for(var c2=0;c2<GRID_COLS;c2++){
+      var idx2 = r2*GRID_COLS+c2;
+      var wx2 = originX + c2*CELL, wz2 = originZ + r2*CELL;
+      var p2c = iso(wx2, wz2);
+      var fill2 = state.hitCells[idx2] ? 'rgba(255,90,95,0.30)' : state.coveredCells[idx2] ? 'rgba(56,224,200,0.16)' : 'rgba(90,110,120,0.07)';
+      drawDiamond(p2c.sx, p2c.sy, CELL*(TILE_W/10), CELL*(TILE_H/10)*2, fill2, 'rgba(120,150,160,0.10)');
+    }
+  }
+
+  /* collapsed structure zone tint */
+  var czp = iso((COLLAPSE_ZONE.xMin+COLLAPSE_ZONE.xMax)/2, (COLLAPSE_ZONE.zMin+COLLAPSE_ZONE.zMax)/2);
+  ctx.save();
+  ctx.globalAlpha = 0.10;
+  drawDiamond(czp.sx, czp.sy, (COLLAPSE_ZONE.xMax-COLLAPSE_ZONE.xMin)*(TILE_W/10)*1.3, (COLLAPSE_ZONE.zMax-COLLAPSE_ZONE.zMin)*(TILE_H/10)*1.3, '#c893ff', null);
+  ctx.restore();
+
+  /* rubble field, sorted for correct overlap by depth */
+  var drawables = rubble.map(function(rb){ return {type:'rubble', d:rb.x+rb.z, ref:rb}; });
+  drawables.push({type:'slam', d:-9999, ref:null});
+  drawables.push({type:'markers', d:9998, ref:null});
+  drawables.push({type:'drone', d: state.pos.x+state.pos.z+0.5, ref:null});
+
+  drawables.sort(function(a,b){ return a.d-b.d; });
+
+  drawables.forEach(function(item){
+    if(item.type==='rubble'){
+      var rb = item.ref;
+      var top = rb.dark? '#3c352c' : '#4d4438';
+      var s1 = rb.dark? '#231f1a' : '#2d271f';
+      var s2 = rb.dark? '#2c2620' : '#382f26';
+      drawBox(rb.x, rb.z, rb.w, rb.w*0.8, rb.h*0.6, top, s1, s2);
+    }
+    if(item.type==='slam'){
+      ctx.fillStyle = 'rgba(200,147,255,0.55)';
+      state.slamTrail.forEach(function(pt){
+        var pp = iso(pt.x, pt.z);
+        ctx.beginPath(); ctx.arc(pp.sx, pp.sy-1, 1.6, 0, Math.PI*2); ctx.fill();
+      });
+    }
+    if(item.type==='markers'){
+      state.detections.forEach(function(det){
+        var mp = iso(det.wx, det.wz);
+        var age = (performance.now()-det._t)*0.001;
+        var pulse = 1 + Math.sin(age*4)*0.25;
+        var color = det.tag==='survivor' ? '#3fe092' : '#ff5a5f';
+        // beam
+        var grad = ctx.createLinearGradient(mp.sx, mp.sy, mp.sx, mp.sy-38);
+        grad.addColorStop(0, color+'aa'); grad.addColorStop(1, color+'00');
+        ctx.strokeStyle = grad; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(mp.sx, mp.sy); ctx.lineTo(mp.sx, mp.sy-38); ctx.stroke();
+        // ring
+        ctx.strokeStyle = color; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.ellipse(mp.sx, mp.sy, 9*pulse, 4.5*pulse, 0, 0, Math.PI*2); ctx.stroke();
+        // core
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(mp.sx, mp.sy-6, 3, 0, Math.PI*2); ctx.fill();
+      });
+    }
+    if(item.type==='drone'){
+      var dp = iso(state.pos.x, state.pos.z);
+      var bob = Math.sin(t*2.2)*2;
+      var dsy = dp.sy - 34 + bob;
+      var rot = state.hdgRad || 0;
+
+      // ground shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      drawDiamond(dp.sx, dp.sy+1, 16, 7, ctx.fillStyle, null);
+
+      ctx.save();
+      ctx.translate(dp.sx, dsy);
+      ctx.rotate(Math.sin(rot)*0.12);
+
+      var armLen = 15;
+      var arms = [[-1,-1],[1,-1],[1,1],[-1,1]];
+      arms.forEach(function(a, i){
+        var ax = a[0]*armLen*0.55, ay = a[1]*armLen*0.28;
+        ctx.strokeStyle = '#b9c4ca'; ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(ax,ay); ctx.stroke();
+        // rotor blur
+        ctx.fillStyle = 'rgba(210,220,225,0.5)';
+        ctx.beginPath(); ctx.ellipse(ax, ay, 8, 2.6, 0, 0, Math.PI*2); ctx.fill();
+        // motor accent
+        ctx.fillStyle = i%2? '#38e0c8' : '#ff9c3d';
+        ctx.beginPath(); ctx.arc(ax, ay, 2, 0, Math.PI*2); ctx.fill();
+      });
+      // body
+      ctx.fillStyle = '#e9eef1';
+      drawDiamond(0, 0, 15, 8, '#e9eef1', '#0d1319');
+      ctx.fillStyle = 'rgba(56,224,200,0.9)';
+      ctx.beginPath(); ctx.arc(0, -1, 2.6, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+  });
+
+  ctx.restore();
+}
+
+var rafId = null;
+function loop(){
+  rafId = requestAnimationFrame(loop);
+  safe(renderScene);
+}
+
+/* ============================================================
+   MISSION TICK — drives HUD, dashboard, console, and the scene
+   ============================================================ */
+function currentCellInZone(x,z){
+  return x>=COLLAPSE_ZONE.xMin && x<=COLLAPSE_ZONE.xMax && z>=COLLAPSE_ZONE.zMin && z<=COLLAPSE_ZONE.zMax;
+}
+
+function missionTick(){
+  state.tick++;
+  var wp = waypoints[state.wpIndex];
+  var dx = wp.x - state.pos.x, dz = wp.z - state.pos.z;
+  var dist = Math.sqrt(dx*dx+dz*dz);
+
+  if(dist < 1.2){
+    state.coveredCells[wp.cellIndex] = true;
+    state.wpIndex = (state.wpIndex+1) % waypoints.length;
+    if(state.wpIndex === 0) pushLog("NAV", "Grid sweep complete — re-planning coverage pass over residual cells.");
+    else pushLog("NAV", "Waypoint reached: cell " + wp.cellIndex + " (" + wp.x.toFixed(1)+", "+wp.z.toFixed(1)+") marked scanned.");
+  } else {
+    var step = Math.min(1, 3.4/dist);
+    state.pos.x += dx*step; state.pos.z += dz*step;
+    state.hdgRad = Math.atan2(dx,dz);
+    state.hdg = Math.round(((state.hdgRad*180/Math.PI)+360)%360);
+  }
+
+  var inZone = currentCellInZone(state.pos.x, state.pos.z);
+  var newMode = inZone ? "SLAM_GPS_DENIED" : "GPS_NAV";
+  if(newMode !== state.mode){
+    state.mode = newMode;
+    if(inZone) pushLog("WARN", "GPS lock degraded — entering collapsed-structure zone. Switching to VIO + LiDAR SLAM.");
+    else pushLog("SLAM", "GPS signal reacquired — SLAM pose fused back to GNSS reference frame.");
+  }
+  if(inZone){
+    state.slamTrail.push({x: state.pos.x, z: state.pos.z});
+    if(state.slamTrail.length>500) state.slamTrail.shift();
+    if(state.tick % 6 === 0) pushLog("SLAM", "Loop closure candidate matched — drift correction applied (Δ" + rand(0.01,0.08).toFixed(2) + "m).");
+  }
+
+  state.alt = 36 + Math.sin(state.tick*0.3)*3;
+  state.spd = 3.6 + Math.sin(state.tick*0.5)*1.1;
+  state.battery = Math.max(4, state.battery - 0.12);
+
+  if(state.tick % 4 === 0 && Math.random() < 0.55 && state.detections.length < 14){
+    var d = DET_TYPES[Math.floor(rand(0,DET_TYPES.length))];
+    var conf = rand(58,98);
+    var risk = inZone ? rand(45,95) : rand(10,70);
+    var det = {
+      id: state.detections.length+1, label: d.label, tag: d.tag,
+      confidence: conf, risk: risk, priority: conf*0.6 + risk*0.4,
+      wx: state.pos.x + rand(-4,4), wz: state.pos.z + rand(-4,4),
+      cellIndex: wp.cellIndex, mode: state.mode, _t: performance.now()
+    };
+    state.detections.push(det);
+    if(det.tag==='hazard') state.hitCells[det.cellIndex] = true;
+    pushLog(det.tag==='survivor'?'PERC':'WARN',
+      (det.tag==='survivor'?'RGB+thermal fusion: ':'Hazard classifier: ') + d.label +
+      " · confidence " + conf.toFixed(1) + "% · priority " + det.priority.toFixed(1));
+    safe(renderDetTable);
+  }
+
+  if(state.tick % 9 === 0){
+    var linkUp = Math.random() < 0.3;
+    pushLog("COMM", linkUp
+      ? "Uplink window found — synced " + state.detections.length + " geo-tagged records + heatmap to command post."
+      : "No uplink — buffering mission data to onboard local storage.");
+  }
+
+  safe(renderHUD);
+  safe(renderDashboard);
+}
+
+/* ============================================================
+   HUD
+   ============================================================ */
+var elAlt=document.getElementById('hud-alt'), elSpd=document.getElementById('hud-spd'),
+    elHdg=document.getElementById('hud-hdg'), elWp=document.getElementById('hud-wp'),
+    elModeBadge=document.getElementById('hud-mode-badge'), elTicker=document.getElementById('hud-ticker');
+
+(function initCells(){
+  var wrap = document.getElementById('hud-cells');
+  for(var i=0;i<GRID_COLS*GRID_ROWS;i++){
+    var d = document.createElement('div');
+    d.className='cell'; d.dataset.i=i;
+    wrap.appendChild(d);
+  }
+  cellEls = wrap.children;
+})();
+
+function renderHUD(){
+  elAlt.textContent = state.alt.toFixed(1)+" m";
+  elSpd.textContent = state.spd.toFixed(1)+" m/s";
+  elHdg.textContent = state.hdg+"°";
+  elWp.textContent = (state.wpIndex+1)+"/"+waypoints.length;
+  var slam = state.mode==="SLAM_GPS_DENIED";
+  elModeBadge.textContent = slam ? "SLAM · GPS-DENIED" : "GPS NAV";
+  elModeBadge.className = "badge" + (slam? " slam":"");
+  if(state.detections.length){
+    var last = state.detections[state.detections.length-1];
+    elTicker.innerHTML = "<b>LATEST:</b> "+last.label+" — confidence "+last.confidence.toFixed(1)+"%, priority "+last.priority.toFixed(1)+" ("+(last.tag==='survivor'?'rescue queue':'hazard flag')+")";
+  }
+  var doneCount = state.coveredCells.filter(Boolean).length;
+  var pct = Math.round(100*doneCount/state.coveredCells.length);
+  document.getElementById('hud-pct').textContent = pct+"%";
+  for(var i=0;i<cellEls.length;i++){
+    cellEls[i].className = "cell" + (state.hitCells[i]?" hit": state.coveredCells[i]?" done":"");
+  }
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+var dAlt=document.getElementById('d-alt'), barAlt=document.getElementById('bar-alt'),
+    dBatt=document.getElementById('d-batt'), barBatt=document.getElementById('bar-batt'),
+    dSpd=document.getElementById('d-spd'), barSpd=document.getElementById('bar-spd'),
+    dCov=document.getElementById('d-cov'), barCov=document.getElementById('bar-cov'),
+    dModeLabel=document.getElementById('d-mode-label'), dModeVal=document.getElementById('d-mode-val'),
+    pillBatt=document.getElementById('pill-batt'), pillLink=document.getElementById('pill-link'),
+    pillLinkDot=document.getElementById('pill-link-dot');
+
+function renderDashboard(){
+  dAlt.textContent = state.alt.toFixed(1)+" m"; barAlt.style.width = Math.min(100, state.alt/60*100)+"%";
+  dBatt.textContent = Math.round(state.battery)+"%"; barBatt.style.width = state.battery+"%";
+  dSpd.textContent = state.spd.toFixed(1)+" m/s"; barSpd.style.width = Math.min(100, state.spd/8*100)+"%";
+  var doneCount = state.coveredCells.filter(Boolean).length;
+  var pct = Math.round(100*doneCount/state.coveredCells.length);
+  dCov.textContent = pct+"%"; barCov.style.width = pct+"%";
+  var slam = state.mode==="SLAM_GPS_DENIED";
+  dModeLabel.textContent = slam ? "VIO + LiDAR SLAM (no GNSS)" : "GPS / GLONASS lock";
+  dModeVal.textContent = slam ? "DEGRADED-GNSS" : "NOMINAL";
+  dModeVal.style.color = slam ? "var(--red)" : "var(--green)";
+  pillBatt.textContent = Math.round(state.battery)+"%";
+  pillLink.textContent = "LINK: " + (state.tick%9<4 ? "SYNCING…" : "OFFLINE-STORE");
+  pillLinkDot.className = "dot " + (state.tick%9<4 ? "on":"warn");
+  safe(drawHeatmap);
+}
+
+function renderDetTable(){
+  var tbody = document.getElementById('det-table');
+  document.getElementById('det-count').textContent = state.detections.length + " total";
+  if(!state.detections.length){
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-row">No detections yet — grid search in progress…</td></tr>';
+    return;
+  }
+  var sorted = state.detections.slice().sort(function(a,b){return b.priority-a.priority;});
+  tbody.innerHTML = sorted.map(function(d,i){
+    return '<tr>'+
+      '<td class="rank'+(i===0?' top':'')+'">'+(i+1)+'</td>'+
+      '<td><span class="tag '+d.tag+'">'+d.label+'</span></td>'+
+      '<td class="conf">'+d.confidence.toFixed(1)+'%</td>'+
+      '<td class="conf">'+d.risk.toFixed(0)+'</td>'+
+      '<td class="conf" style="color:var(--amber);font-weight:600">'+d.priority.toFixed(1)+'</td>'+
+      '<td class="mono" style="color:var(--muted)">'+(d.mode==='SLAM_GPS_DENIED'?'SLAM ':'GNSS ')+d.wx.toFixed(1)+', '+d.wz.toFixed(1)+'</td>'+
+    '</tr>';
+  }).join('');
+}
+
+var hmCanvas = document.getElementById('heatmap'), hmCtx = hmCanvas.getContext('2d');
+function drawHeatmap(){
+  var w = hmCanvas.clientWidth, h = hmCanvas.clientHeight;
+  if(!w || !h) return;
+  if(hmCanvas.width!==Math.round(w*2)){ hmCanvas.width=Math.round(w*2); hmCanvas.height=Math.round(h*2); }
+  hmCtx.setTransform(2,0,0,2,0,0);
+  hmCtx.clearRect(0,0,w,h);
+  var padd=4, cw=(w-padd*2)/GRID_COLS, ch=(h-padd*2)/GRID_ROWS;
+  for(var r=0;r<GRID_ROWS;r++){
+    for(var c=0;c<GRID_COLS;c++){
+      var idx = r*GRID_COLS+c;
+      hmCtx.fillStyle = state.hitCells[idx] ? '#ff5a5f' : state.coveredCells[idx] ? '#38e0c8' : '#182129';
+      hmCtx.fillRect(padd+c*cw+1, padd+r*ch+1, cw-2, ch-2);
+    }
+  }
+  var cur = waypoints[state.wpIndex];
+  var cc = Math.floor((cur.x-originX)/CELL), cr = Math.floor((cur.z-originZ)/CELL);
+  hmCtx.strokeStyle = '#ff9c3d'; hmCtx.lineWidth=2;
+  hmCtx.strokeRect(padd+cc*cw+1, padd+cr*ch+1, cw-2, ch-2);
+}
+
+/* ============================================================
+   CONSOLE
+   ============================================================ */
+var term = document.getElementById('term');
+function renderConsoleLine(level, msg){
+  var row = document.createElement('div');
+  row.className = 'term-line';
+  row.innerHTML = '<span class="term-ts">'+nowStamp()+'</span>  <span class="lvl '+level+'">['+level+']</span> '+msg;
+  term.appendChild(row);
+  while(term.children.length>160) term.removeChild(term.firstChild);
+  term.scrollTop = term.scrollHeight;
+}
+
+var missionLogEl = document.getElementById('mission-log');
+function renderMissionLogItem(level, msg){
+  var row = document.createElement('div');
+  row.className='log-item';
+  row.innerHTML = '<span class="t">'+nowStamp()+'</span><span><b>['+level+']</b> '+msg+'</span>';
+  missionLogEl.prepend(row);
+  while(missionLogEl.children.length>60) missionLogEl.removeChild(missionLogEl.lastChild);
+}
+
+/* ============================================================
+   TAB SWITCHING
+   ============================================================ */
+document.querySelectorAll('.tab-btn').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
+    document.querySelectorAll('.view').forEach(function(v){v.classList.remove('active');});
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.view).classList.add('active');
+    safe(resizeCanvas); safe(drawHeatmap);
+  });
+});
+
+/* ============================================================
+   BOOT — each stage wrapped so one failure can't blank the page
+   ============================================================ */
+safe(function(){
+  pushLog("INFO", "ROS 2 stack initialized — nodes: nav_core, perception_fusion, slam_toolbox, rescue_priority, comms_sync.");
+  pushLog("INFO", "Mission loaded: boustrophedon grid search, "+waypoints.length+" waypoints, "+(GRID_COLS*GRID_ROWS)+" cells.");
+  pushLog("PERC", "YOLO + thermal fusion model loaded on Jetson Orin Nano (TensorRT engine, fp16).");
+});
+safe(resizeCanvas);
+safe(renderHUD);
+safe(renderDashboard);
+safe(renderDetTable);
+safe(function(){ loop(); });
+setInterval(function(){ safe(missionTick); }, 1100);
+
+})();
+</script>
+</body>
+</html>
